@@ -1,0 +1,481 @@
+import sys
+import json
+import threading
+from datetime import datetime
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QLabel, QLineEdit, QPushButton, QPlainTextEdit, 
+                             QSplitter, QMessageBox, QStatusBar, QCheckBox,
+                             QTabWidget, QListWidget, QListWidgetItem,
+                             QGroupBox, QGridLayout, QMenuBar, QMenu, QMainWindow)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont, QShortcut, QKeySequence, QTextCharFormat, QColor, QAction
+
+class GraphQLWorker(QThread):
+    """Thread worker para executar operações GraphQL sem travar a UI"""
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+    
+    def __init__(self, operation, orgid, token, query=None, variables=None):
+        super().__init__()
+        self.operation = operation
+        self.orgid = orgid
+        self.token = token
+        self.query = query
+        self.variables = variables
+    
+    def run(self):
+        try:
+            # TODO: INTEGRE SEU BACKEND AQUI
+            if self.operation == 'introspect':
+                # Simulação de introspecção
+                schema = {
+                    "__schema": {
+                        "queryType": {"name": "Query"},
+                        "mutationType": {"name": "Mutation"},
+                        "types": [
+                            {"name": "Query", "kind": "OBJECT", "fields": [
+                                {"name": "users", "type": {"name": "[User]"}},
+                                {"name": "user", "type": {"name": "User"}},
+                                {"name": "posts", "type": {"name": "[Post]"}}
+                            ]},
+                            {"name": "User", "kind": "OBJECT", "fields": [
+                                {"name": "id", "type": {"name": "ID!"}},
+                                {"name": "name", "type": {"name": "String!"}},
+                                {"name": "email", "type": {"name": "String!"}},
+                                {"name": "posts", "type": {"name": "[Post]"}}
+                            ]},
+                            {"name": "Post", "kind": "OBJECT", "fields": [
+                                {"name": "id", "type": {"name": "ID!"}},
+                                {"name": "title", "type": {"name": "String!"}},
+                                {"name": "content", "type": {"name": "String!"}},
+                                {"name": "author", "type": {"name": "User"}}
+                            ]},
+                            {"name": "Mutation", "kind": "OBJECT", "fields": [
+                                {"name": "createUser", "type": {"name": "User"}},
+                                {"name": "createPost", "type": {"name": "Post"}}
+                            ]}
+                        ]
+                    }
+                }
+                result = json.dumps(schema, indent=2, ensure_ascii=False)
+                self.finished.emit(result)
+                
+            elif self.operation == 'query':
+                # Simulação de execução de query
+                result_data = {
+                    "data": {
+                        "users": [
+                            {"id": "1", "name": "João Silva", "email": "joao@exemplo.com"},
+                            {"id": "2", "name": "Maria Santos", "email": "maria@exemplo.com"},
+                            {"id": "3", "name": "Pedro Oliveira", "email": "pedro@exemplo.com"}
+                        ]
+                    }
+                }
+                result = json.dumps(result_data, indent=2, ensure_ascii=False)
+                self.finished.emit(result)
+                
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class GraphQLClientGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.worker = None
+        self.query_history = []
+        self.init_ui()
+        self.setup_shortcuts()
+        self.create_menu_bar()
+
+    def create_menu_bar(self):
+        """Cria a barra de menus no topo"""
+        menubar = self.menuBar()
+        menubar.setStyleSheet("QMenuBar { padding: 2px 5px; }")
+        
+        # Menu Arquivo
+        file_menu = menubar.addMenu('&Arquivo')
+        
+        new_action = QAction('&Nova Query', self)
+        new_action.setShortcut('Ctrl+N')
+        new_action.triggered.connect(self.new_query)
+        file_menu.addAction(new_action)
+        
+        save_action = QAction('&Salvar Query', self)
+        save_action.setShortcut('Ctrl+S')
+        save_action.triggered.connect(self.save_query_to_history)
+        file_menu.addAction(save_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction('&Sair', self)
+        exit_action.setShortcut('Ctrl+Q')
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Menu Editar
+        edit_menu = menubar.addMenu('&Editar')
+        
+        clear_action = QAction('&Limpar Tudo', self)
+        clear_action.setShortcut('Ctrl+L')
+        clear_action.triggered.connect(self.clear_all)
+        edit_menu.addAction(clear_action)
+        
+        edit_menu.addSeparator()
+        
+        copy_action = QAction('&Copiar Resultado', self)
+        copy_action.setShortcut('Ctrl+C')
+        copy_action.triggered.connect(self.copy_result)
+        edit_menu.addAction(copy_action)
+        
+        # Menu Ferramentas
+        tools_menu = menubar.addMenu('&Ferramentas')
+        
+        introspect_action = QAction('&Introspecção', self)
+        introspect_action.setShortcut('Ctrl+I')
+        introspect_action.triggered.connect(self.run_introspection)
+        tools_menu.addAction(introspect_action)
+        
+        # Menu Ajuda
+        help_menu = menubar.addMenu('&Ajuda')
+        
+        about_action = QAction('&Sobre', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
+    def init_ui(self):
+        self.setWindowTitle('GraphQL Desktop Client')
+        self.resize(1400, 800)
+
+        # Widget central
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Layout principal
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(3)
+        main_layout.setContentsMargins(3, 3, 3, 3)
+
+        # ==========================================
+        # BARRA DE AUTENTICAÇÃO (COMPACTA)
+        # ==========================================
+        auth_layout = QHBoxLayout()
+        auth_layout.setSpacing(8)
+        auth_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Org ID
+        auth_layout.addWidget(QLabel('<b>Org ID:</b>'))
+        self.orgid_input = QLineEdit()
+        self.orgid_input.setPlaceholderText('ID da organização')
+        self.orgid_input.setMaximumWidth(180)
+        self.orgid_input.setMinimumWidth(150)
+        auth_layout.addWidget(self.orgid_input)
+
+        # Token
+        auth_layout.addWidget(QLabel('<b>Token:</b>'))
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText('Token de autenticação')
+        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token_input.setMaximumWidth(300)
+        self.token_input.setMinimumWidth(250)
+        auth_layout.addWidget(self.token_input)
+
+        # Checkbox mostrar token
+        self.show_token_check = QCheckBox('Mostrar')
+        self.show_token_check.stateChanged.connect(self.toggle_token_visibility)
+        auth_layout.addWidget(self.show_token_check)
+
+        auth_layout.addStretch()
+
+        # Botões compactos
+        self.btn_introspect = QPushButton('🔍 Introspecção')
+        self.btn_introspect.setMaximumWidth(120)
+        self.btn_introspect.clicked.connect(self.run_introspection)
+        auth_layout.addWidget(self.btn_introspect)
+
+        self.btn_execute = QPushButton('▶ Executar')
+        self.btn_execute.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50; 
+                color: white; 
+                font-weight: bold;
+                padding: 4px 12px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        self.btn_execute.setMaximumWidth(100)
+        self.btn_execute.clicked.connect(self.run_query)
+        auth_layout.addWidget(self.btn_execute)
+
+        self.btn_clear = QPushButton('🗑 Limpar')
+        self.btn_clear.setMaximumWidth(80)
+        self.btn_clear.clicked.connect(self.clear_all)
+        auth_layout.addWidget(self.btn_clear)
+
+        main_layout.addLayout(auth_layout)
+
+        # ==========================================
+        # ÁREA CENTRAL COM SPLITTER
+        # ==========================================
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Coluna 1: Query e Variáveis
+        query_widget = QWidget()
+        query_layout = QVBoxLayout(query_widget)
+        query_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.query_tabs = QTabWidget()
+        
+        # Aba Query
+        self.query_editor = QPlainTextEdit()
+        self.query_editor.setFont(QFont("Consolas", 10))
+        self.query_editor.setPlaceholderText('Escreva sua query GraphQL aqui...\n\n{\n  users {\n    id\n    name\n    email\n  }\n}')
+        self.query_tabs.addTab(self.query_editor, "Query")
+        
+        # Aba Variáveis
+        self.variables_editor = QPlainTextEdit()
+        self.variables_editor.setFont(QFont("Consolas", 10))
+        self.variables_editor.setPlaceholderText('{\n  "userId": "123",\n  "limit": 10\n}')
+        self.query_tabs.addTab(self.variables_editor, "Variáveis (JSON)")
+        
+        query_layout.addWidget(self.query_tabs)
+        self.splitter.addWidget(query_widget)
+
+        # Coluna 2: Introspecção
+        intro_widget = QWidget()
+        intro_layout = QVBoxLayout(intro_widget)
+        intro_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.intro_label = QLabel('<b>Schema (Introspecção)</b>')
+        intro_layout.addWidget(self.intro_label)
+        
+        self.intro_editor = QPlainTextEdit()
+        self.intro_editor.setReadOnly(True)
+        self.intro_editor.setFont(QFont("Consolas", 10))
+        self.intro_editor.setPlaceholderText('O schema aparecerá aqui...')
+        intro_layout.addWidget(self.intro_editor)
+        
+        self.splitter.addWidget(intro_widget)
+
+        # Coluna 3: Resultados
+        result_widget = QWidget()
+        result_layout = QVBoxLayout(result_widget)
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.result_tabs = QTabWidget()
+        
+        # Aba Resultado
+        self.result_editor = QPlainTextEdit()
+        self.result_editor.setReadOnly(True)
+        self.result_editor.setFont(QFont("Consolas", 10))
+        self.result_editor.setPlaceholderText('O resultado aparecerá aqui...')
+        self.result_tabs.addTab(self.result_editor, "Resultado")
+        
+        # Aba Histórico
+        self.history_list = QListWidget()
+        self.history_list.itemClicked.connect(self.load_query_from_history)
+        self.result_tabs.addTab(self.history_list, "Histórico")
+        
+        result_layout.addWidget(self.result_tabs)
+        self.splitter.addWidget(result_widget)
+
+        # Tamanhos iniciais das colunas
+        self.splitter.setSizes([450, 350, 450])
+        
+        main_layout.addWidget(self.splitter)
+
+        # ==========================================
+        # STATUS BAR
+        # ==========================================
+        self.status_bar = QStatusBar()
+        self.status_bar.setMaximumHeight(22)
+        self.status_bar.showMessage('Pronto.')
+        self.setStatusBar(self.status_bar)
+
+    def setup_shortcuts(self):
+        """Configura atalhos de teclado"""
+        # Executar query
+        shortcut_execute = QShortcut(QKeySequence("Ctrl+Return"), self)
+        shortcut_execute.activated.connect(self.run_query)
+        
+        # Introspecção
+        shortcut_introspect = QShortcut(QKeySequence("Ctrl+I"), self)
+        shortcut_introspect.activated.connect(self.run_introspection)
+        
+        # Salvar no histórico
+        shortcut_save = QShortcut(QKeySequence("Ctrl+S"), self)
+        shortcut_save.activated.connect(self.save_query_to_history)
+        
+        # Nova query
+        shortcut_new = QShortcut(QKeySequence("Ctrl+N"), self)
+        shortcut_new.activated.connect(self.new_query)
+        
+        # Limpar
+        shortcut_clear = QShortcut(QKeySequence("Ctrl+L"), self)
+        shortcut_clear.activated.connect(self.clear_all)
+
+    def toggle_token_visibility(self, state):
+        """Mostra ou oculta o token"""
+        if state == Qt.CheckState.Checked.value:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Normal)
+        else:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+    def get_credentials(self):
+        """Retorna os dados dos campos superiores"""
+        return {
+            'orgid': self.orgid_input.text().strip(),
+            'token': self.token_input.text().strip()
+        }
+
+    def new_query(self):
+        """Cria nova query em branco"""
+        reply = QMessageBox.question(self, 'Nova Query', 
+                                     'Deseja criar uma nova query? O conteúdo atual será perdido.',
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.query_editor.clear()
+            self.variables_editor.clear()
+            self.result_editor.clear()
+            self.status_bar.showMessage('Nova query criada.')
+
+    def clear_all(self):
+        """Limpa todos os campos de texto"""
+        reply = QMessageBox.question(self, 'Confirmar', 
+                                     'Deseja limpar todos os campos?',
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.intro_editor.clear()
+            self.query_editor.clear()
+            self.variables_editor.clear()
+            self.result_editor.clear()
+            self.status_bar.showMessage('Tudo limpo.')
+
+    def copy_result(self):
+        """Copia resultado para área de transferência"""
+        result = self.result_editor.toPlainText()
+        if result:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(result)
+            self.status_bar.showMessage('Resultado copiado para a área de transferência.')
+        else:
+            self.status_bar.showMessage('Nenhum resultado para copiar.')
+
+    def save_query_to_history(self):
+        """Salva query atual no histórico"""
+        query = self.query_editor.toPlainText().strip()
+        if query:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            item = QListWidgetItem(f"[{timestamp}] {query[:50]}...")
+            item.setData(Qt.ItemDataRole.UserRole, query)
+            self.history_list.addItem(item)
+            self.status_bar.showMessage('Query salva no histórico.')
+        else:
+            self.status_bar.showMessage('Nenhuma query para salvar.')
+
+    def load_query_from_history(self, item):
+        """Carrega query do histórico"""
+        query = item.data(Qt.ItemDataRole.UserRole)
+        if query:
+            self.query_editor.setPlainText(query)
+            self.status_bar.showMessage('Query carregada do histórico')
+
+    def run_introspection(self):
+        """Executa a introspecção em thread separada"""
+        creds = self.get_credentials()
+        if not creds['orgid'] or not creds['token']:
+            QMessageBox.warning(self, 'Atenção', 'Preencha o Org ID e o Token.')
+            return
+
+        self.status_bar.showMessage('Executando introspecção...')
+        self.btn_introspect.setEnabled(False)
+        
+        self.worker = GraphQLWorker('introspect', creds['orgid'], creds['token'])
+        self.worker.finished.connect(self.on_introspection_finished)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
+
+    def run_query(self):
+        """Executa a query em thread separada"""
+        creds = self.get_credentials()
+        query = self.query_editor.toPlainText().strip()
+        variables_text = self.variables_editor.toPlainText().strip()
+
+        if not creds['orgid'] or not creds['token']:
+            QMessageBox.warning(self, 'Atenção', 'Preencha o Org ID e o Token.')
+            return
+        
+        if not query:
+            QMessageBox.warning(self, 'Atenção', 'O campo de query está vazio.')
+            return
+
+        # Parse variables se houver
+        variables = None
+        if variables_text:
+            try:
+                variables = json.loads(variables_text)
+            except json.JSONDecodeError as e:
+                QMessageBox.critical(self, 'Erro', f'Variáveis em formato JSON inválido:\n{e}')
+                return
+
+        self.status_bar.showMessage('Executando query...')
+        self.btn_execute.setEnabled(False)
+        
+        self.worker = GraphQLWorker('query', creds['orgid'], creds['token'], query, variables)
+        self.worker.finished.connect(self.on_query_finished)
+        self.worker.error.connect(self.on_error)
+        self.worker.start()
+
+    def on_introspection_finished(self, result):
+        """Callback quando introspecção termina"""
+        self.intro_editor.setPlainText(result)
+        self.status_bar.showMessage('Introspecção concluída.')
+        self.btn_introspect.setEnabled(True)
+
+    def on_query_finished(self, result):
+        """Callback quando query termina"""
+        self.result_editor.setPlainText(result)
+        self.status_bar.showMessage('Query executada com sucesso.')
+        self.btn_execute.setEnabled(True)
+        
+        # Adiciona ao histórico automaticamente
+        query = self.query_editor.toPlainText().strip()
+        if query and (not self.query_history or self.query_history[-1] != query):
+            self.query_history.append(query)
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            item = QListWidgetItem(f"[{timestamp}] {query[:50]}...")
+            item.setData(Qt.ItemDataRole.UserRole, query)
+            self.history_list.addItem(item)
+
+    def on_error(self, error_msg):
+        """Callback quando ocorre erro"""
+        QMessageBox.critical(self, 'Erro', f'Falha na operação:\n{error_msg}')
+        self.status_bar.showMessage('Erro na execução.')
+        self.btn_introspect.setEnabled(True)
+        self.btn_execute.setEnabled(True)
+
+    def show_about(self):
+        """Mostra diálogo sobre"""
+        QMessageBox.information(self, 'Sobre', 
+            'GraphQL Desktop Client v1.0\n\n'
+            'Uma interface gráfica para execução de queries GraphQL.\n\n'
+            'Atalhos:\n'
+            'Ctrl+Enter - Executar Query\n'
+            'Ctrl+I - Introspecção\n'
+            'Ctrl+S - Salvar no Histórico\n'
+            'Ctrl+N - Nova Query\n'
+            'Ctrl+L - Limpar Tudo')
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion') 
+    
+    gui = GraphQLClientGUI()
+    gui.show()
+    sys.exit(app.exec())
