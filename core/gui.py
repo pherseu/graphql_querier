@@ -220,3 +220,22 @@ class GraphQLClientGUI(QMainWindow):
         # Executar query
         shortcut_execute = QShortcut(QKeySequence("Ctrl+Return"), self)
         shortcut_execute.activated.connect(self.run_query)
+
+        # Introspecção
+        shortcut_introspect = QShortcut(QKeySequence("Ctrl+I"), self)
+        shortcut_introspect.activated.connect(self.run_introspection)
+
+        # Salvar no histórico
+        shortcut_save = QShortcut(QKeySequence("Ctrl+S"), self)
+        shortcut_save.activated.connect(self.save_query_to_history)
+
+        # Nova query
+        shortcut_new = QShortcut(QKeySequence("Ctrl+N"), self)
+        shortcut_new.activated.connect(self.new_query)
+
+        # Limpar
+        shortcut_clear = QShortcut(QKeySequence("Ctrl+L"), self)
+        shortcut_clear.activated.connect(self.clear_all)
+
+    def toggle_token_visibility(self, state):
+        pass
