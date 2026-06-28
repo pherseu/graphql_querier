@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
                              QPushButton, QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget)
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtGui import QAction, QFont, QKeySequence, QShortcut
 
 # classe para gerar a interface gráfica
 class GraphQLClientGUI(QMainWindow):
@@ -217,4 +217,6 @@ class GraphQLClientGUI(QMainWindow):
         self.setStatusBar(self.status_bar)
 
     def setup_shortcuts(self):
-        pass
+        # Executar query
+        shortcut_execute = QShortcut(QKeySequence("Ctrl+Return"), self)
+        shortcut_execute.activated.connect(self.run_query)
