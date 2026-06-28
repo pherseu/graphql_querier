@@ -1,6 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
-                             QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget)
+                             QPushButton, QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget)
 from PyQt6.QtGui import QAction, QFont
 
 # classe para gerar a interface gráfica
@@ -184,6 +184,35 @@ class GraphQLClientGUI(QMainWindow):
         self.splitter.addWidget(query_widget)
 
         # Coluna 3: Resultados
-        
+        result_widget = QWidget()
+        result_layout = QVBoxLayout(result_widget)
+        result_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.show()
+        self.result_tabs = QTabWidget()
+
+        # Aba de resultados
+        self.result_editor = QPlainTextEdit()
+        self.result_editor.setReadOnly(True)
+        self.result_editor.setFont(QFont('Consolas', 10))
+        self.result_editor.setPlaceholderText('O resultado da query aparecerá aqui...')
+        self.result_tabs.addTab(self.result_editor, 'Resultado')
+
+        # Aba de histórico
+        self.history_list = QListWidget()
+        self.history_list.itemClicked.connect(self.load_query_from_history)
+        self.result_tabs.addTab(self.history_list, 'Histórico')
+
+        result_layout.addWidget(self.result_tabs)
+        self.splitter.addWidget(result_widget)
+
+        # Tamanhos iniciais das colunas
+        self.splitter.setSizes([400, 400, 400])
+
+        main_layout.addWidget(self.splitter)
+
+        # Status Bar
+        self.status_bar = QStatusBar()
+        self.status_bar.setMaximumHeight(22)
+        self.status_bar.showMessage('Pronto')
+        self.setStatusBar(self.status_bar)
+        
