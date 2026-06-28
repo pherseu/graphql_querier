@@ -215,4 +215,6 @@ class GraphQLClientGUI(QMainWindow):
         self.status_bar.setMaximumHeight(22)
         self.status_bar.showMessage('Pronto')
         self.setStatusBar(self.status_bar)
-        
+
+    def setup_shortcuts(self):
+        pass
