@@ -238,4 +238,16 @@ class GraphQLClientGUI(QMainWindow):
         shortcut_clear.activated.connect(self.clear_all)
 
     def toggle_token_visibility(self, state):
+        if state == Qt.CheckState.Checked.value:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Normal)
+        else:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+
+    def get_credentials(self):
+        return {
+            'org_id': self.orgid_input.text().strip(),
+            'token': self.token_input.text().strip()
+        }
+    
+    def new_query(self):
         pass
