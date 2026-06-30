@@ -1,6 +1,11 @@
+from worker import GraphQLWorker
+
+from datetime import datetime
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
-                             QPushButton, QSplitter, QStatusBar, QTabWidget, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem,
+                             QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, 
+                             QStatusBar, QTabWidget, QVBoxLayout, QWidget)
 from PyQt6.QtGui import QAction, QFont, QKeySequence, QShortcut
 
 # classe para gerar a interface gráfica
@@ -250,4 +255,65 @@ class GraphQLClientGUI(QMainWindow):
         }
     
     def new_query(self):
+        reply = QMessageBox.question(self, 'Nova Query',
+                                     'Deseja criar uma nova query? O conteúdo atual será perdido.',
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.query_editor.clear()
+            self.variables_editor.clear()
+            self.result_editor.clear()
+            self.status_bar.showMessage('Nova query criada.')
+
+    def clear_all(self):
+        reply = QMessageBox.question(self, 'Confirmar',
+                                     'Deseja limpar todos os campos?',
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.intro_editor.clear()
+            self.query_editor.clear()
+            self.variables_editor.clear()
+            self.result_editor.clear()
+            self.status_bar.showMessage('Todos os campos foram limpos.')
+
+    def copy_result(self):
+        result = self.result_editor.toPlainText()
+        if result:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(result)
+            self.status_bar.showMessage('Resultado copiado para a área de transferência.')
+        else:
+            self.status_bar.showMessage('Nenhum resultado para copiar.')
+
+    def save_query_to_history(self):
+        query = self.query_editor.toPlainText().strip()
+        if query:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            item = QListWidgetItem(f"[{timestamp}] {query[:50]}{'...' if len(query) > 50 else ''}")
+            item.setData(Qt.ItemDataRole.UserRole, query)
+            self.history_list.addItem(item)
+            self.status_bar.showMessage('Query salva no histórico.')
+        else:
+            self.status_bar.showMessage('Não há query para salvar.')
+
+    def load_query_from_history(self, item):
+        query = item.data(Qt.ItemDataRole.UserRole)
+        if query:
+            self.query_editor.setPlainText(query)
+            self.status_bar.showMessage('Query carregada do histórico.')
+
+    def run_introspection(self):
+        creds = self.get_credentials()
+        if not creds['org_id'] or not creds['token']:
+            QMessageBox.warning(self, 'Erro', 'Por favor, forneça Org ID e Token antes de executar a introspecção.')
+            return
+
+        self.status_bar.showMessage('Executando introspecção...')
+        self.btn_introspect.setEnabled(False)
+        
+        self.worker = GraphQLWorker(creds['org_id'], creds['token'], introspection=True)
+        self.worker.finished.connect(self.on_introspection_finished)
+        self.worker.error.connect(self.on_worker_error)
+        self.worker.start()
+
+    def run_query(self):
         pass
